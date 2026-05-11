@@ -1,0 +1,12 @@
+node_modules
+.next
+out
+.env*.local
+.storage
+*.tsbuildinfo
+*.bak
+.build.log
+api-smoke.mjs
+api-debug.mjs
+test-e2e.mjs
+webapp-test.py
