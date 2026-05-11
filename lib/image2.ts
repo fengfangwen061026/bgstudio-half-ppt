@@ -7,14 +7,15 @@ export async function generateSlideImage(params: {
   styleBible: DeckStyleBible;
   outputPath: string;
   seed?: number;
-}) {
-  const prompt = buildSlideImagePrompt(params.slide, params.styleBible);
-  const imageBuffer = await callImage2({ prompt, seed: params.seed });
-  await writeFile(params.outputPath, imageBuffer);
-  return params.outputPath;
+  styleReference?: string;
+}): Promise<{ path: string; revisedPrompt?: string }> {
+  const prompt = buildSlideImagePrompt(params.slide, params.styleBible, params.styleReference);
+  const result = await callImage2({ prompt, seed: params.seed });
+  await writeFile(params.outputPath, result.imageBuffer);
+  return { path: params.outputPath, revisedPrompt: result.revisedPrompt };
 }
 
-async function callImage2(params: { prompt: string; seed?: number }) {
+async function callImage2(params: { prompt: string; seed?: number }): Promise<{ imageBuffer: Buffer; revisedPrompt?: string }> {
   const apiKey = process.env.IMAGE2_API_KEY;
   const baseUrl = process.env.IMAGE2_API_BASE_URL;
   const model = process.env.IMAGE2_MODEL ?? "gpt-image-1";
@@ -48,7 +49,7 @@ async function callImage2(params: { prompt: string; seed?: number }) {
 
   const rawBody = await response.text();
   if (contentType.includes("image/")) {
-    return Buffer.from(rawBody, "binary");
+    return { imageBuffer: Buffer.from(rawBody, "binary"), revisedPrompt: undefined };
   }
 
   let data: Record<string, unknown>;
@@ -60,13 +61,17 @@ async function callImage2(params: { prompt: string; seed?: number }) {
 
   const first = (data?.data as unknown[])?.[0] as Record<string, unknown> | undefined;
   const base64 = first?.b64_json ?? first?.image_base64 ?? data?.b64_json ?? data?.image_base64;
-  if (typeof base64 === "string" && base64.length > 100) return Buffer.from(base64, "base64");
+  const revisedPrompt = typeof first?.revised_prompt === "string" ? first.revised_prompt : undefined;
+
+  if (typeof base64 === "string" && base64.length > 100) {
+    return { imageBuffer: Buffer.from(base64, "base64"), revisedPrompt };
+  }
 
   const imageUrl = first?.url ?? first?.image_url ?? data?.url;
   if (typeof imageUrl === "string" && imageUrl.startsWith("http")) {
     const imageResponse = await fetch(imageUrl);
     if (!imageResponse.ok) throw new Error(`image2 图片下载失败：${imageResponse.status}`);
-    return Buffer.from(await imageResponse.arrayBuffer());
+    return { imageBuffer: Buffer.from(await imageResponse.arrayBuffer()), revisedPrompt };
   }
 
   throw new Error(`image2 响应里没有图片数据。keys: ${JSON.stringify(Object.keys(data))}, first keys: ${first ? JSON.stringify(Object.keys(first)) : "null"}`);

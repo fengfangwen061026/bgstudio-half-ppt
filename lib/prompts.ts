@@ -5,6 +5,11 @@ export type DeckStyleBible = {
   style: string;
   stylePrompt: string;
   negativePrompt: string;
+  globalDesign?: {
+    primaryColor: string;
+    fontStyle: string;
+    overallTone: string;
+  };
 };
 
 const STYLE_PRESETS: Record<string, { label: string; prompt: string; negative: string }> = {
@@ -47,6 +52,7 @@ export function createStyleBible(outline: DeckOutline, style?: string): DeckStyl
     style: preset.label,
     stylePrompt: preset.prompt,
     negativePrompt: preset.negative,
+    globalDesign: outline.globalDesign,
   };
 }
 
@@ -146,16 +152,32 @@ ${attachments ? `附件内容：\n${attachments}` : "没有附件。"}
 请生成 ${input.pageCount} 页的完整 PPT 方案，设计方案要匹配「${styleLabel}」风格。`;
 }
 
-export function buildSlideImagePrompt(slide: SlidePlan, bible: DeckStyleBible) {
+export function buildSlideImagePrompt(slide: SlidePlan, bible: DeckStyleBible, styleReference?: string) {
   const layout = slide.layoutPlan;
   const design = slide.designPlan;
   const content = slide.contentPlan;
   const points = content.mainPoints.map((p, i) => `${i + 1}. ${p}`).join("; ");
 
+  const globalDesignSection = bible.globalDesign
+    ? `\nGLOBAL DESIGN SYSTEM (MUST be consistent across all slides in this deck):
+- Primary color: ${bible.globalDesign.primaryColor}
+- Typography: ${bible.globalDesign.fontStyle}
+- Overall tone: ${bible.globalDesign.overallTone}
+- CRITICAL: All slides in this deck must use the SAME color palette, SAME font family, SAME visual language. This is slide ${slide.index} of a multi-slide presentation — it must look like it belongs to the same deck.`
+    : "";
+
+  const styleReferenceSection = styleReference
+    ? `\nSTYLE REFERENCE FROM COVER SLIDE:
+The first slide of this deck was generated with this visual direction: "${styleReference}"
+You MUST match the visual style, color choices, typography, and design language from that cover slide. Keep the same level of visual complexity, same color palette, same font choices.`
+    : "";
+
   return `Design a stunning, high-quality 16:9 presentation slide. This is a digital design mockup — NOT a photo of a projected slide, NOT a screenshot, NOT a real classroom scene.
 
 STYLE DIRECTION (${bible.style}):
 ${bible.stylePrompt}
+${globalDesignSection}
+${styleReferenceSection}
 
 SLIDE CONTENT:
 - Deck title: "${bible.subject}"
@@ -182,6 +204,7 @@ REQUIREMENTS:
 - The slide must contain structured informational content (charts, diagrams, infographics, organized text blocks)
 - Ultra high production quality — this should look like a professionally designed presentation, not an AI-generated template
 - Crisp typography, intentional whitespace, sophisticated color usage
+- CONSISTENCY: This slide must visually match other slides in the same deck — same color scheme, same font choices, same design language, same level of visual complexity
 
 DO NOT: ${bible.negativePrompt}. Do NOT show a projector screen, classroom, desk, laptop, or any physical environment. This is a pure slide design, as if exported from Keynote or PowerPoint.`;
 }
