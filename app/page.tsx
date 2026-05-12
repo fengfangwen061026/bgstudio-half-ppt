@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DeckOutline, PptJob, SlidePlan } from "@/lib/schemas";
 
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 type UploadedFile = { id: string; name: string; size: number; text: string; extractedTextPreview: string };
 type Step = "input" | "outline-loading" | "outline-review" | "generating" | "done" | "failed";
 
@@ -26,7 +28,7 @@ export default function Home() {
   useEffect(() => {
     if (!jobId || job?.status === "done" || job?.status === "failed") return;
     const timer = window.setInterval(async () => {
-      const response = await fetch(`/api/ppt/jobs/${jobId}`);
+      const response = await fetch(`${BASE}/api/ppt/jobs/${jobId}`);
       const data = await response.json();
       if (!response.ok) return;
       setJob(data);
@@ -51,7 +53,7 @@ export default function Home() {
     setError(null);
     const formData = new FormData();
     Array.from(selected).forEach((file) => formData.append("files", file));
-    const response = await fetch("/api/uploads", { method: "POST", body: formData });
+    const response = await fetch(`${BASE}/api/uploads`, { method: "POST", body: formData });
     const data = await response.json();
     if (!response.ok) return setError(data.error ?? "附件读取失败。");
     setFiles((prev) => [...prev, ...data.files]);
@@ -60,7 +62,7 @@ export default function Home() {
   async function requestOutline() {
     setStep("outline-loading");
     setError(null);
-    const response = await fetch("/api/outline", {
+    const response = await fetch(`${BASE}/api/outline`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ title, rawContent, pageCount, tone, style, attachmentTexts: files.map((file) => file.text) }),
@@ -85,7 +87,7 @@ export default function Home() {
     if (!outline) return;
     setStep("generating");
     setError(null);
-    const response = await fetch("/api/ppt/jobs", {
+    const response = await fetch(`${BASE}/api/ppt/jobs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ ...outline, style }),

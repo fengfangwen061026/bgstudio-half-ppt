@@ -7,6 +7,7 @@ import { generateSlideImage, generateTemplate } from "./image2";
 import { buildPptxFromImages } from "./pptx";
 import type { DeckOutline, JobCreateInput, PptJob } from "./schemas";
 
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const storageRoot = path.join(process.cwd(), ".storage", "jobs");
 
 function jobPath(id: string) {
@@ -86,7 +87,7 @@ async function runJob(job: PptJob, input: JobCreateInput, jobDir: string) {
     const outputPath = path.join(jobDir, "result.pptx");
     await buildPptxFromImages({ deckTitle: input.deckTitle, images: sortedImages, outputPath });
     job.status = "done";
-    job.downloadUrl = `/api/ppt/jobs/${job.id}/download`;
+    job.downloadUrl = `${basePath}/api/ppt/jobs/${job.id}/download`;
     await persistJob(job);
   } catch (error) {
     job.status = "failed";
@@ -101,7 +102,7 @@ function markSlide(job: PptJob, slideId: string, status: "generating" | "done" |
   slide.status = status;
   if (imagePath) {
     slide.imagePath = imagePath;
-    slide.imageUrl = `/api/ppt/jobs/${job.id}/images/${slideId}`;
+    slide.imageUrl = `${basePath}/api/ppt/jobs/${job.id}/images/${slideId}`;
   }
   job.completedSlides = job.slides.filter((item) => item.status === "done").length;
 }
