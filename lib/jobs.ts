@@ -61,16 +61,16 @@ async function runJob(job: PptJob, input: JobCreateInput, jobDir: string) {
 
     // Step 1: Generate blank template to establish visual identity
     const templatePath = path.join(jobDir, "template.png");
-    await generateTemplate({ styleBible: bible, outputPath: templatePath });
+    const templateResult = await generateTemplate({ styleBible: bible, outputPath: templatePath });
 
-    // Step 2: Generate ALL slides in parallel, each referencing the template image
+    // Step 2: Generate ALL slides in parallel, using template's revised_prompt as style reference
     const concurrency = Math.max(1, Math.min(Number(process.env.MAX_IMAGE_CONCURRENCY ?? 10), input.slides.length));
     const limit = pLimit(concurrency);
     const allImages = await Promise.all(input.slides.map((slide) => limit(async () => {
       const outputPath = path.join(jobDir, `slide-${String(slide.index).padStart(2, "0")}.png`);
       markSlide(job, slide.id, "generating");
       await persistJob(job);
-      await generateSlideImage({ slide, styleBible: bible, outputPath, templatePath });
+      await generateSlideImage({ slide, styleBible: bible, outputPath, templateReference: templateResult.revisedPrompt });
       markSlide(job, slide.id, "done", outputPath);
       await persistJob(job);
       return { slideId: slide.id, path: outputPath };

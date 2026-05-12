@@ -1,32 +1,32 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import type { SlidePlan } from "./schemas";
 import { buildSlideImagePrompt, buildTemplatePrompt, type DeckStyleBible } from "./prompts";
 
 export async function generateTemplate(params: {
   styleBible: DeckStyleBible;
   outputPath: string;
-}): Promise<string> {
+}): Promise<{ path: string; revisedPrompt?: string }> {
   const prompt = buildTemplatePrompt(params.styleBible);
-  const result = await callImage2Generate({ prompt });
+  const result = await callImage2({ prompt });
   await writeFile(params.outputPath, result.imageBuffer);
-  return params.outputPath;
+  return { path: params.outputPath, revisedPrompt: result.revisedPrompt };
 }
 
 export async function generateSlideImage(params: {
   slide: SlidePlan;
   styleBible: DeckStyleBible;
   outputPath: string;
-  templatePath: string;
+  templateReference?: string;
 }): Promise<{ path: string }> {
-  const prompt = buildSlideImagePrompt(params.slide, params.styleBible);
-  const result = await callImage2Edit({ prompt, referenceImagePath: params.templatePath });
+  const prompt = buildSlideImagePrompt(params.slide, params.styleBible, params.templateReference);
+  const result = await callImage2({ prompt });
   await writeFile(params.outputPath, result.imageBuffer);
   return { path: params.outputPath };
 }
 
 type Image2Result = { imageBuffer: Buffer; revisedPrompt?: string };
 
-async function callImage2Generate(params: { prompt: string }): Promise<Image2Result> {
+async function callImage2(params: { prompt: string }): Promise<Image2Result> {
   const { apiKey, baseUrl, model } = getConfig();
   const endpoint = `${baseUrl}/v1/images/generations`;
 
@@ -40,26 +40,6 @@ async function callImage2Generate(params: { prompt: string }): Promise<Image2Res
       size: "1792x1024",
       response_format: "b64_json",
     }),
-  });
-
-  return parseResponse(response);
-}
-
-async function callImage2Edit(params: { prompt: string; referenceImagePath: string }): Promise<Image2Result> {
-  const { apiKey, baseUrl, model } = getConfig();
-  const endpoint = `${baseUrl}/v1/images/edits`;
-  const imageData = await readFile(params.referenceImagePath);
-
-  const formData = new FormData();
-  formData.append("model", model);
-  formData.append("prompt", params.prompt);
-  formData.append("size", "1792x1024");
-  formData.append("image", new Blob([imageData], { type: "image/png" }), "template.png");
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { authorization: `Bearer ${apiKey}` },
-    body: formData,
   });
 
   return parseResponse(response);
