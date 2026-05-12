@@ -152,59 +152,80 @@ ${attachments ? `附件内容：\n${attachments}` : "没有附件。"}
 请生成 ${input.pageCount} 页的完整 PPT 方案，设计方案要匹配「${styleLabel}」风格。`;
 }
 
-export function buildSlideImagePrompt(slide: SlidePlan, bible: DeckStyleBible, styleReference?: string) {
+export function buildTemplatePrompt(bible: DeckStyleBible) {
+  const globalDesignSection = bible.globalDesign
+    ? `\nDESIGN SYSTEM:
+- Primary color: ${bible.globalDesign.primaryColor}
+- Typography: ${bible.globalDesign.fontStyle}
+- Tone: ${bible.globalDesign.overallTone}`
+    : "";
+
+  return `Design a stunning, high-quality 16:9 presentation TEMPLATE slide for a deck titled "${bible.subject}". This template will be used as the visual foundation for all slides in the deck — every subsequent slide will be generated based on this template.
+
+STYLE DIRECTION (${bible.style}):
+${bible.stylePrompt}
+${globalDesignSection}
+
+THIS IS A BLANK TEMPLATE — DO NOT include any specific content, data, or body text. Include ONLY:
+- The deck title "${bible.subject}" as a large centered title
+- Background design, color scheme, and decorative elements that define the visual identity
+- Header/footer areas with placeholder layout zones
+- Any recurring design motifs (lines, shapes, patterns, gradients) that should appear on every slide
+- A subtle page number area
+
+The template should establish: color palette, background treatment, typography style, decorative elements, and overall visual atmosphere. All subsequent slides will inherit this look.
+
+DO NOT: ${bible.negativePrompt}. Do NOT show a projector screen, classroom, desk, laptop, or any physical environment.`;
+}
+
+export function buildSlideImagePrompt(slide: SlidePlan, bible: DeckStyleBible) {
   const layout = slide.layoutPlan;
   const design = slide.designPlan;
   const content = slide.contentPlan;
   const points = content.mainPoints.map((p, i) => `${i + 1}. ${p}`).join("; ");
 
   const globalDesignSection = bible.globalDesign
-    ? `\nGLOBAL DESIGN SYSTEM (MUST be consistent across all slides in this deck):
+    ? `\nGLOBAL DESIGN SYSTEM (MUST match the template image provided):
 - Primary color: ${bible.globalDesign.primaryColor}
 - Typography: ${bible.globalDesign.fontStyle}
-- Overall tone: ${bible.globalDesign.overallTone}
-- CRITICAL: All slides in this deck must use the SAME color palette, SAME font family, SAME visual language. This is slide ${slide.index} of a multi-slide presentation — it must look like it belongs to the same deck.`
+- Overall tone: ${bible.globalDesign.overallTone}`
     : "";
 
-  const styleReferenceSection = styleReference
-    ? `\nSTYLE REFERENCE FROM COVER SLIDE:
-The first slide of this deck was generated with this visual direction: "${styleReference}"
-You MUST match the visual style, color choices, typography, and design language from that cover slide. Keep the same level of visual complexity, same color palette, same font choices.`
-    : "";
+  return `You are given a template image that defines the visual identity of this presentation deck. Create a new slide that uses the EXACT SAME visual style — same background, same colors, same fonts, same decorative elements, same design language. The only thing that changes is the content.
 
-  return `Design a stunning, high-quality 16:9 presentation slide. This is a digital design mockup — NOT a photo of a projected slide, NOT a screenshot, NOT a real classroom scene.
-
-STYLE DIRECTION (${bible.style}):
-${bible.stylePrompt}
+CRITICAL: The provided image is your style template. Match it precisely in terms of:
+- Background color/gradient/pattern
+- Font style and hierarchy
+- Decorative elements and motifs
+- Color palette and accent usage
+- Overall visual density and spacing
 ${globalDesignSection}
-${styleReferenceSection}
 
-SLIDE CONTENT:
-- Deck title: "${bible.subject}"
-- This slide (#${slide.index}): "${slide.title}"${slide.subtitle ? ` — "${slide.subtitle}"` : ""}
+SLIDE CONTENT TO ADD:
+- Deck: "${bible.subject}"
+- Slide #${slide.index}: "${slide.title}"${slide.subtitle ? ` — "${slide.subtitle}"` : ""}
 - Key message: ${slide.keyMessage}
-- Main content: ${points}
-${content.dataOrEvidence ? `- Supporting data: ${content.dataOrEvidence}` : ""}
+- Content: ${points}
+${content.dataOrEvidence ? `- Data/evidence: ${content.dataOrEvidence}` : ""}
 
-LAYOUT SPECIFICATION:
+LAYOUT:
 - Structure: ${layout.structure}
-- Primary visual element: ${layout.visualElement}
-- Text arrangement: ${layout.textPlacement}
+- Visual element: ${layout.visualElement}
+- Text placement: ${layout.textPlacement}
 
-DESIGN SPECIFICATION:
+PAGE-SPECIFIC DESIGN:
 - Colors: ${design.colorScheme}
 - Background: ${design.backgroundStyle}
-- Accent details: ${design.accentDetails}
+- Accents: ${design.accentDetails}
 
-ADDITIONAL VISUAL DIRECTION:
+VISUAL DIRECTION:
 ${slide.imagePromptHint}
 
 REQUIREMENTS:
-- Include Chinese text: slide title, key labels, and data annotations must be in Chinese
-- The slide must contain structured informational content (charts, diagrams, infographics, organized text blocks)
-- Ultra high production quality — this should look like a professionally designed presentation, not an AI-generated template
-- Crisp typography, intentional whitespace, sophisticated color usage
-- CONSISTENCY: This slide must visually match other slides in the same deck — same color scheme, same font choices, same design language, same level of visual complexity
+- Chinese text for title, labels, and annotations
+- Structured content (charts, diagrams, infographics, organized text)
+- Ultra high production quality
+- MUST look like it belongs to the same deck as the template image
 
-DO NOT: ${bible.negativePrompt}. Do NOT show a projector screen, classroom, desk, laptop, or any physical environment. This is a pure slide design, as if exported from Keynote or PowerPoint.`;
+DO NOT: ${bible.negativePrompt}. No projector, classroom, desk, or physical environment.`;
 }

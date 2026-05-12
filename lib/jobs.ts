@@ -3,7 +3,7 @@ import path from "node:path";
 import pLimit from "p-limit";
 import { nanoid } from "nanoid";
 import { createStyleBible } from "./prompts";
-import { generateSlideImage } from "./image2";
+import { generateSlideImage, generateTemplate } from "./image2";
 import { buildPptxFromImages } from "./pptx";
 import type { DeckOutline, JobCreateInput, PptJob } from "./schemas";
 
@@ -57,32 +57,23 @@ async function runJob(job: PptJob, input: JobCreateInput, jobDir: string) {
     await persistJob(job);
 
     const bible = createStyleBible({ ...input, pageCount: input.slides.length } as DeckOutline, input.style);
-    const seed = Math.floor(Math.random() * 1_000_000);
 
-    // Step 1: Generate cover slide first to establish style reference
-    const coverSlide = input.slides[0];
-    const coverPath = path.join(jobDir, `slide-${String(coverSlide.index).padStart(2, "0")}.png`);
-    markSlide(job, coverSlide.id, "generating");
-    await persistJob(job);
-    const coverResult = await generateSlideImage({ slide: coverSlide, styleBible: bible, outputPath: coverPath, seed });
-    markSlide(job, coverSlide.id, "done", coverPath);
-    await persistJob(job);
+    // Step 1: Generate blank template to establish visual identity
+    const templatePath = path.join(jobDir, "template.png");
+    await generateTemplate({ styleBible: bible, outputPath: templatePath });
 
-    // Step 2: Generate remaining slides in parallel with style reference
-    const remainingSlides = input.slides.slice(1);
-    const concurrency = Math.max(1, Math.min(Number(process.env.MAX_IMAGE_CONCURRENCY ?? 10), remainingSlides.length));
+    // Step 2: Generate ALL slides in parallel, each referencing the template image
+    const concurrency = Math.max(1, Math.min(Number(process.env.MAX_IMAGE_CONCURRENCY ?? 10), input.slides.length));
     const limit = pLimit(concurrency);
-    const remainingImages = await Promise.all(remainingSlides.map((slide) => limit(async () => {
+    const allImages = await Promise.all(input.slides.map((slide) => limit(async () => {
       const outputPath = path.join(jobDir, `slide-${String(slide.index).padStart(2, "0")}.png`);
       markSlide(job, slide.id, "generating");
       await persistJob(job);
-      await generateSlideImage({ slide, styleBible: bible, outputPath, seed, styleReference: coverResult.revisedPrompt });
+      await generateSlideImage({ slide, styleBible: bible, outputPath, templatePath });
       markSlide(job, slide.id, "done", outputPath);
       await persistJob(job);
       return { slideId: slide.id, path: outputPath };
     })));
-
-    const allImages = [{ slideId: coverSlide.id, path: coverPath }, ...remainingImages];
 
     job.status = "building-ppt";
     await persistJob(job);
