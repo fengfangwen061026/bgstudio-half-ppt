@@ -1,4 +1,18 @@
 import { z } from "zod";
+import { DEFAULT_STYLE_KEY, STYLE_KEYS } from "./styles";
+
+export const styleSchema = z.enum(STYLE_KEYS);
+export const densityPreferenceSchema = z.enum(["auto", "light", "balanced", "rich"]);
+export const slideDensitySchema = z.enum(["low", "medium", "high"]);
+export const densityStructureSchema = z.enum(["hero", "cards", "flow", "matrix", "timeline", "comparison", "case-path", "summary-grid"]);
+
+export const densityPlanSchema = z.object({
+  textDensity: slideDensitySchema,
+  visibleLabelCount: z.number().int().min(1).max(12),
+  labelMaxChars: z.number().int().min(6).max(24),
+  structure: densityStructureSchema,
+  rationale: z.string(),
+});
 
 export const slidePlanSchema = z.object({
   id: z.string(),
@@ -23,6 +37,7 @@ export const slidePlanSchema = z.object({
     accentDetails: z.string(),
   }),
   imagePromptHint: z.string(),
+  densityPlan: densityPlanSchema.optional(),
   speakerNote: z.string().optional(),
 });
 
@@ -44,7 +59,8 @@ export const outlineInputSchema = z.object({
   pageCount: z.number().int().min(3).max(20),
   attachmentTexts: z.array(z.string()).optional().default([]),
   tone: z.enum(["safe", "plain", "lazy"]).optional().default("safe"),
-  style: z.enum(["competition", "cute", "luxury", "minimalist", "tech", "academic"]).optional().default("competition"),
+  style: styleSchema.optional().default(DEFAULT_STYLE_KEY),
+  densityPreference: densityPreferenceSchema.optional().default("rich"),
 });
 
 export const jobCreateSchema = z.object({
@@ -55,7 +71,8 @@ export const jobCreateSchema = z.object({
     fontStyle: z.string(),
     overallTone: z.string(),
   }).optional(),
-  style: z.enum(["competition", "cute", "luxury", "minimalist", "tech", "academic"]).optional().default("competition"),
+  style: styleSchema.optional().default(DEFAULT_STYLE_KEY),
+  densityPreference: densityPreferenceSchema.optional().default("rich"),
   slides: z.array(slidePlanSchema).min(1).max(20),
 });
 
@@ -64,8 +81,38 @@ export type DeckOutline = z.infer<typeof outlineSchema>;
 export type OutlineInput = z.infer<typeof outlineInputSchema>;
 export type JobCreateInput = z.infer<typeof jobCreateSchema>;
 
-export type SlideJobStatus = "pending" | "generating" | "done" | "failed";
-export type JobStatus = "queued" | "generating-images" | "building-ppt" | "done" | "failed";
+export type SlideJobStatus = "pending" | "generating" | "retrying" | "done" | "failed";
+export type JobStatus = "queued" | "creating-style-anchor" | "generating-images" | "building-ppt" | "done" | "partial" | "failed";
+
+export type StyleContract = {
+  palette: string[];
+  typography: string;
+  visualMotif: string;
+  backgroundLanguage: string;
+  cardStyle: string;
+  iconStyle: string;
+  chartStyle: string;
+  footerRule: string;
+  forbidden: string[];
+};
+
+export type StyleAnchor = {
+  imagePath: string;
+  imageUrl?: string;
+  prompt: string;
+  revisedPrompt?: string;
+  styleContract: StyleContract;
+};
+
+export type SlideImageCandidate = {
+  index: number;
+  imagePath: string;
+  imageUrl?: string;
+  prompt: string;
+  revisedPrompt?: string;
+  selected: boolean;
+  error?: string;
+};
 
 export type PptJob = {
   id: string;
@@ -76,6 +123,10 @@ export type PptJob = {
   createdAt: number;
   error?: string;
   downloadUrl?: string;
+  densityPreference?: z.infer<typeof densityPreferenceSchema>;
+  style?: z.infer<typeof styleSchema>;
+  styleLabel?: string;
+  styleAnchor?: StyleAnchor;
   slides: Array<{
     slideId: string;
     index: number;
@@ -84,5 +135,12 @@ export type PptJob = {
     imagePath?: string;
     imageUrl?: string;
     error?: string;
+    textDensity?: z.infer<typeof slideDensitySchema>;
+    densityRationale?: string;
+    prompt?: string;
+    revisedPrompt?: string;
+    retryCount?: number;
+    selectedCandidateIndex?: number;
+    candidates?: SlideImageCandidate[];
   }>;
 };

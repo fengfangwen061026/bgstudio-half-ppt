@@ -1,19 +1,47 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { DEFAULT_STYLE_KEY, STYLE_OPTIONS } from "@/lib/styles";
 import type { DeckOutline, PptJob, SlidePlan } from "@/lib/schemas";
+import type { DeckStyleKey } from "@/lib/styles";
 
-const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const CONFIGURED_BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
+function apiPath(path: string) {
+  if (CONFIGURED_BASE) return `${CONFIGURED_BASE}${path}`;
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/ppt")) return `/ppt${path}`;
+  return path;
+}
 
 type UploadedFile = { id: string; name: string; size: number; text: string; extractedTextPreview: string };
 type Step = "input" | "outline-loading" | "outline-review" | "generating" | "done" | "failed";
+type DensityPreference = "auto" | "light" | "balanced" | "rich";
+
+function densityLabel(value: NonNullable<SlidePlan["densityPlan"]>["textDensity"]) {
+  return value === "low" ? "低密度" : value === "medium" ? "中密度" : "高密度";
+}
+
+function densityStructureLabel(value: NonNullable<SlidePlan["densityPlan"]>["structure"]) {
+  const labels = {
+    hero: "主视觉",
+    cards: "卡片组",
+    flow: "流程",
+    matrix: "矩阵",
+    timeline: "时间线",
+    comparison: "对比",
+    "case-path": "案例路径",
+    "summary-grid": "总结网格",
+  };
+  return labels[value];
+}
 
 export default function Home() {
   const [title, setTitle] = useState("大学生短视频消费行为分析");
   const [rawContent, setRawContent] = useState("老师要求结合课堂概念，说明短视频平台如何影响大学生的消费选择。需要有背景、分析、案例和总结。");
   const [pageCount, setPageCount] = useState(8);
   const [tone, setTone] = useState<"safe" | "plain" | "lazy">("safe");
-  const [style, setStyle] = useState<"competition" | "cute" | "luxury" | "minimalist" | "tech" | "academic">("competition");
+  const [style, setStyle] = useState<DeckStyleKey>(DEFAULT_STYLE_KEY);
+  const [densityPreference, setDensityPreference] = useState<DensityPreference>("rich");
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [outline, setOutline] = useState<DeckOutline | null>(null);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -23,12 +51,13 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
 
   const current = outline?.slides[currentSlide];
+  const selectedStyle = STYLE_OPTIONS.find((option) => option.value === style) ?? STYLE_OPTIONS[0];
   const canGenerateOutline = title.trim() && rawContent.trim() && step !== "outline-loading";
 
   useEffect(() => {
     if (!jobId || job?.status === "done" || job?.status === "failed") return;
     const timer = window.setInterval(async () => {
-      const response = await fetch(`${BASE}/api/ppt/jobs/${jobId}`);
+      const response = await fetch(apiPath(`/api/ppt/jobs/${jobId}`));
       const data = await response.json();
       if (!response.ok) return;
       setJob(data);
@@ -53,7 +82,7 @@ export default function Home() {
     setError(null);
     const formData = new FormData();
     Array.from(selected).forEach((file) => formData.append("files", file));
-    const response = await fetch(`${BASE}/api/uploads`, { method: "POST", body: formData });
+    const response = await fetch(apiPath("/api/uploads"), { method: "POST", body: formData });
     const data = await response.json();
     if (!response.ok) return setError(data.error ?? "附件读取失败。");
     setFiles((prev) => [...prev, ...data.files]);
@@ -62,10 +91,10 @@ export default function Home() {
   async function requestOutline() {
     setStep("outline-loading");
     setError(null);
-    const response = await fetch(`${BASE}/api/outline`, {
+    const response = await fetch(apiPath("/api/outline"), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title, rawContent, pageCount, tone, style, attachmentTexts: files.map((file) => file.text) }),
+      body: JSON.stringify({ title, rawContent, pageCount, tone, style, densityPreference, attachmentTexts: files.map((file) => file.text) }),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -87,10 +116,10 @@ export default function Home() {
     if (!outline) return;
     setStep("generating");
     setError(null);
-    const response = await fetch(`${BASE}/api/ppt/jobs`, {
+    const response = await fetch(apiPath("/api/ppt/jobs"), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...outline, style }),
+      body: JSON.stringify({ ...outline, style, densityPreference }),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -122,15 +151,6 @@ export default function Home() {
               <span className="mono muted">不是模板。是整套图。</span>
             </div>
           </div>
-          <div className="preview-device">
-            <div className="preview-top"><span /> <b>deck preview</b></div>
-            <div className="preview-slide">
-              <div className="preview-index mono">/ 01</div>
-              <div className="preview-title">消费路径<br />被谁改写</div>
-              <div className="preview-line" />
-              <div className="preview-chip mono">image2 · 16:9</div>
-            </div>
-          </div>
         </section>
 
         <section id="workbench" className="workbench panel">
@@ -146,7 +166,8 @@ export default function Home() {
             <div className="stack side-card">
               <div className="field"><label htmlFor="pageCount">页数</label><select id="pageCount" value={pageCount} onChange={(event) => setPageCount(Number(event.target.value))}>{[6, 8, 10, 12, 15, 18, 20].map((count) => <option key={count} value={count}>{count} 页</option>)}</select></div>
               <div className="field"><label htmlFor="tone">写法</label><select id="tone" value={tone} onChange={(event) => setTone(event.target.value as typeof tone)}><option value="safe">老师看了不皱眉</option><option value="plain">少废话版</option><option value="lazy">水但不露馅</option></select></div>
-              <div className="field"><label htmlFor="style">PPT 风格</label><select id="style" value={style} onChange={(event) => setStyle(event.target.value as typeof style)}><option value="competition">国赛标准</option><option value="cute">可爱风</option><option value="luxury">华丽高端</option><option value="minimalist">极简风</option><option value="tech">科技风</option><option value="academic">学术严谨</option></select></div>
+              <div className="field"><label htmlFor="density">信息密度</label><select id="density" value={densityPreference} onChange={(event) => setDensityPreference(event.target.value as DensityPreference)}><option value="auto">自动，高密度优先</option><option value="light">偏简洁</option><option value="balanced">均衡报告</option><option value="rich">多数内容页高密度</option></select></div>
+              <div className="field"><label htmlFor="style">PPT 风格</label><select id="style" value={style} onChange={(event) => setStyle(event.target.value as DeckStyleKey)}>{STYLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><span className="mono muted">{selectedStyle.description}</span></div>
               <label className="upload-box" htmlFor="files"><input id="files" type="file" multiple accept=".txt,.md,.pdf,.docx" onChange={(event) => uploadFiles(event.target.files)} /><span className="upload-title">丢附件</span><span className="mono muted">txt / md / pdf / docx</span></label>
               {files.length > 0 && <div className="file-list">{files.map((file) => <div key={file.id}><b>{file.name}</b><span>{Math.round(file.size / 1024)} KB</span></div>)}</div>}
             </div>
@@ -185,6 +206,8 @@ export default function Home() {
                   <p><b>背景：</b>{current.designPlan.backgroundStyle}</p>
                   <p><b>强调细节：</b>{current.designPlan.accentDetails}</p>
                 </div>
+
+                {current.densityPlan && <div className="plan-section"><h3>信息密度</h3><p><b>密度：</b>{densityLabel(current.densityPlan.textDensity)} · {current.densityPlan.visibleLabelCount} 个信息块</p><p><b>结构：</b>{densityStructureLabel(current.densityPlan.structure)}</p><p className="muted">原因：{current.densityPlan.rationale}</p></div>}
 
                 <div className="edit-grid"><div className="field"><label htmlFor="slideTitle">标题</label><input id="slideTitle" value={current.title} onChange={(event) => updateCurrentSlide({ title: event.target.value })} /></div><div className="field"><label htmlFor="imageHint">画面方案</label><textarea id="imageHint" value={current.imagePromptHint} onChange={(event) => updateCurrentSlide({ imagePromptHint: event.target.value })} /></div></div>
               </div>

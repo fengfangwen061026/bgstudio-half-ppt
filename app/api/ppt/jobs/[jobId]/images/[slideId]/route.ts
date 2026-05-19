@@ -8,10 +8,12 @@ export async function GET(
 ) {
   const { jobId, slideId } = await params;
   const job = await getJob(jobId);
-  const slide = job?.slides.find((item) => item.slideId === slideId);
-  if (!slide?.imagePath) return NextResponse.json({ error: "图片还没生成好。" }, { status: 404 });
+  const imagePath = slideId === "style-anchor"
+    ? job?.styleAnchor?.imagePath
+    : job?.slides.find((item) => item.slideId === slideId)?.imagePath;
+  if (!imagePath) return NextResponse.json({ error: "图片还没生成好。" }, { status: 404 });
 
-  const file = await readFile(slide.imagePath);
+  const file = await readFile(imagePath);
   return new NextResponse(file, {
     headers: {
       "content-type": "image/png",

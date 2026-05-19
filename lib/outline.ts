@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { outlineInputSchema, type DeckOutline, type OutlineInput, type SlidePlan } from "./schemas";
+import { densityPlanSchema, outlineInputSchema, type DeckOutline, type OutlineInput, type SlidePlan } from "./schemas";
 
 export async function generateOutline(input: OutlineInput): Promise<DeckOutline> {
   const parsed = outlineInputSchema.parse(input);
@@ -77,11 +77,11 @@ function normalizeOutline(raw: unknown, input: OutlineInput): DeckOutline {
     pageCount: slides.length,
     visualDirection,
     globalDesign,
-    slides: slides.map((item, i) => normalizeSlide(item, i)),
+    slides: slides.map((item, i) => normalizeSlide(item, i, input)),
   };
 }
 
-function normalizeSlide(item: unknown, i: number): SlidePlan {
+function normalizeSlide(item: unknown, i: number, input: OutlineInput): SlidePlan {
   const s = item as Record<string, unknown>;
   const index = typeof s.index === "number" ? s.index : i + 1;
   let role: SlidePlan["role"] = "content";
@@ -95,13 +95,14 @@ function normalizeSlide(item: unknown, i: number): SlidePlan {
   const cp = (s.contentPlan ?? s.content_plan ?? {}) as Record<string, unknown>;
   const lp = (s.layoutPlan ?? s.layout_plan ?? {}) as Record<string, unknown>;
   const dp = (s.designPlan ?? s.design_plan ?? {}) as Record<string, unknown>;
+  const densityPlan = normalizeDensityPlan(s.densityPlan ?? s.density_plan);
 
   const rawMainPoints = cp.mainPoints ?? cp.main_points;
   const mainPoints = Array.isArray(rawMainPoints)
     ? rawMainPoints.map(String)
     : Array.isArray(s.bullets) ? (s.bullets as unknown[]).map(String) : ["（无具体内容）"];
 
-  return {
+  const slide: SlidePlan = {
     id: typeof s.id === "string" ? s.id : nanoid(10),
     index,
     title: typeof s.title === "string" ? s.title : `第 ${index} 页`,
@@ -124,8 +125,73 @@ function normalizeSlide(item: unknown, i: number): SlidePlan {
       accentDetails: String(dp.accentDetails ?? dp.accent_details ?? "主色调强调"),
     },
     imagePromptHint: typeof s.imagePromptHint === "string" ? s.imagePromptHint : (typeof s.image_prompt_hint === "string" ? s.image_prompt_hint : `A professional PPT slide about ${s.title ?? "topic"}`),
+    densityPlan,
     speakerNote: typeof (s.speakerNote ?? s.speaker_note) === "string" ? String(s.speakerNote ?? s.speaker_note) : undefined,
   };
+  slide.densityPlan = slide.densityPlan ? enforceDensityBudget(slide.densityPlan) : fallbackDensityPlan(slide, input.densityPreference);
+  return slide;
+}
+
+function normalizeDensityPlan(value: unknown): SlidePlan["densityPlan"] {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const normalized = {
+    textDensity: raw.textDensity ?? raw.text_density,
+    visibleLabelCount: raw.visibleLabelCount ?? raw.visible_label_count,
+    labelMaxChars: raw.labelMaxChars ?? raw.label_max_chars,
+    structure: raw.structure,
+    rationale: raw.rationale,
+  };
+  const result = densityPlanSchema.safeParse(normalized);
+  return result.success ? enforceDensityBudget(result.data) : undefined;
+}
+
+function enforceDensityBudget(plan: NonNullable<SlidePlan["densityPlan"]>): NonNullable<SlidePlan["densityPlan"]> {
+  const budget = plan.textDensity === "low"
+    ? { visibleLabelCount: 2, labelMaxChars: 8 }
+    : plan.textDensity === "medium" ? { visibleLabelCount: 6, labelMaxChars: 16 } : { visibleLabelCount: 10, labelMaxChars: 22 };
+  return { ...plan, ...budget };
+}
+
+function fallbackDensityPlan(slide: SlidePlan, preference: OutlineInput["densityPreference"]): NonNullable<SlidePlan["densityPlan"]> {
+  const complexity = [
+    slide.contentPlan.mainPoints.length >= 4,
+    Boolean(slide.contentPlan.dataOrEvidence),
+    (slide.contentPlan.conceptsToExplain?.length ?? 0) >= 3,
+    /matrix|矩阵|timeline|时间线|comparison|对比|framework|框架|process|流程|dashboard|数据|table|表格|case|案例/.test(`${slide.layoutPlan.structure} ${slide.layoutPlan.visualElement}`.toLowerCase()),
+  ].filter(Boolean).length;
+
+  let textDensity: NonNullable<SlidePlan["densityPlan"]>["textDensity"] = slide.role === "cover" ? "low" : slide.role === "ending" ? "medium" : "high";
+  if (preference === "light") {
+    textDensity = slide.role === "cover" || slide.role === "ending" ? "low" : slide.role === "case" || slide.contentPlan.dataOrEvidence || complexity >= 2 ? "high" : "medium";
+  } else if (preference === "balanced") {
+    textDensity = slide.role === "cover" ? "low" : slide.role === "agenda" || (slide.role === "content" && complexity === 0) ? "medium" : "high";
+  } else if (preference === "auto") {
+    textDensity = slide.role === "cover" ? "low" : slide.role === "agenda" && complexity === 0 ? "medium" : "high";
+  }
+
+  const budget = textDensity === "low"
+    ? { visibleLabelCount: 2, labelMaxChars: 8 }
+    : textDensity === "medium" ? { visibleLabelCount: 6, labelMaxChars: 16 } : { visibleLabelCount: 10, labelMaxChars: 22 };
+
+  return {
+    textDensity,
+    ...budget,
+    structure: fallbackDensityStructure(slide, textDensity),
+    rationale: `${slide.role} 页面按内容复杂度自动判定为${textDensity === "low" ? "低" : textDensity === "medium" ? "中" : "高"}密度。`,
+  };
+}
+
+function fallbackDensityStructure(slide: SlidePlan, textDensity: NonNullable<SlidePlan["densityPlan"]>["textDensity"]): NonNullable<SlidePlan["densityPlan"]>["structure"] {
+  const text = `${slide.layoutPlan.structure} ${slide.layoutPlan.visualElement}`.toLowerCase();
+  if (slide.role === "cover" || slide.role === "ending") return "hero";
+  if (/timeline|时间线/.test(text)) return "timeline";
+  if (/matrix|矩阵|framework|框架|table|表格/.test(text)) return "matrix";
+  if (/comparison|对比/.test(text)) return "comparison";
+  if (/process|流程|flow/.test(text)) return "flow";
+  if (slide.role === "case") return "case-path";
+  if (slide.role === "summary") return "summary-grid";
+  return textDensity === "high" ? "matrix" : "cards";
 }
 
 function generateFallbackOutline(input: OutlineInput): DeckOutline {
@@ -137,7 +203,7 @@ function generateFallbackOutline(input: OutlineInput): DeckOutline {
     const isLast = index === pageCount;
     const role = index === 1 ? "cover" : index === 2 ? "agenda" : isLast ? "ending" : roles[Math.min(i, roles.length - 1)];
     const title = index === 1 ? input.title : `第 ${index} 页`;
-    return {
+    const slide: SlidePlan = {
       id: nanoid(10),
       index,
       title,
@@ -159,6 +225,8 @@ function generateFallbackOutline(input: OutlineInput): DeckOutline {
       imagePromptHint: `A professional 16:9 PPT slide with Chinese title "${title}"`,
       speakerNote: "按要点展开。",
     };
+    slide.densityPlan = fallbackDensityPlan(slide, input.densityPreference);
+    return slide;
   });
 
   return {
